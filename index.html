@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Inventario Mejorado</title>
+  <script src="https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js"></script>
+  <style>
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    .container { max-width: 1200px; margin: auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 5px 20px rgba(0,0,0,0.15); }
+    header { text-align: center; margin-bottom: 20px; }
+    h1 { margin-bottom: 10px; color:#333; }
+    .tabs { display: flex; flex-wrap: wrap; background: #f1f1f1; border-radius: 10px; overflow: hidden; }
+    .tab-btn { flex: 1; padding: 12px; border: none; cursor: pointer; background: none; font-weight: bold; transition:0.3s; }
+    .tab-btn:hover { background:#ddd; }
+    .tab-btn.active { background: #667eea; color: white; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; margin-top: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { padding: 10px; border-bottom: 1px solid #eee; text-align:center; }
+    th { background: #667eea; color: white; }
+    tr:hover { background: #f9f9f9; }
+    .stock-bajo { background: #ffe6e6; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { font-weight: bold; margin-bottom: 5px; display: block; }
+    .form-group input, .form-group select, textarea {
+      width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px;
+    }
+    .btn { padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition:0.2s; }
+    .btn:hover { opacity:0.9; }
+    .btn-primary { background: #667eea; color: white; }
+    .btn-danger { background: #e53e3e; color: white; }
+    .btn-warning { background: #f6ad55; color: white; }
+    .alert { padding: 10px; margin: 10px 0; border-radius: 5px; display: none; }
+    .alert-success { background: #c6f6d5; color: #22543d; }
+    .alert-error { background: #fed7d7; color: #742a2a; }
+    .search-bar { margin: 10px 0; display: flex; gap: 10px; }
+    .search-bar input, .search-bar select { flex: 1; padding: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🏪 Inventario Mejorado</h1>
+      <p>Gestión de productos con SQLite.js + LocalStorage</p>
+    </header>
+
+    <div id="alertBox" class="alert"></div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="openTab(event, 'dashboard')">📊 Dashboard</button>
+      <button class="tab-btn" onclick="openTab(event, 'productos')">📦 Productos</button>
+      <button class="tab-btn" onclick="openTab(event, 'agregar')">➕ Agregar</button>
+      <button class="tab-btn" onclick="openTab(event, 'backup')">💾 Backup</button>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="tab-content active">
+      <div class="stats">
+        <p><b>Total Productos:</b> <span id="totalProductos">0</span></p>
+        <p><b>Valor Total:</b> <span id="valorTotal">$0.00</span></p>
+        <p><b>Stock Bajo:</b> <span id="stockBajo">0</span></p>
+      </div>
+    </div>
+
+    <!-- Productos -->
+    <div id="productos" class="tab-content">
+      <div class="search-bar">
+        <input type="text" id="buscarNombre" placeholder="🔍 Buscar producto...">
+        <select id="filtroCategoria">
+          <option value="">Todas las categorías</option>
+          <option value="Alimentos">Alimentos</option>
+          <option value="Bebidas">Bebidas</option>
+          <option value="Limpieza">Limpieza</option>
+          <option value="Electrónicos">Electrónicos</option>
+          <option value="Ropa">Ropa</option>
+        </select>
+      </div>
+      <table>
+        <thead><tr>
+          <th>ID</th><th>Nombre</th><th>Precio</th><th>Stock</th><th>Categoría</th><th>Acciones</th>
+        </tr></thead>
+        <tbody id="productosTable"></tbody>
+      </table>
+    </div>
+
+    <!-- Agregar Producto -->
+    <div id="agregar" class="tab-content">
+      <form id="productoForm">
+        <input type="hidden" id="productoId">
+        <div class="form-group"><label>Nombre:</label><input type="text" id="nombre" required></div>
+        <div class="form-group"><label>Descripción:</label><textarea id="descripcion"></textarea></div>
+        <div class="form-group"><label>Precio:</label><input type="number" id="precio" step="0.01" min="0" required></div>
+        <div class="form-group"><label>Stock:</label><input type="number" id="stock" min="0" required></div>
+        <div class="form-group"><label>Categoría:</label>
+          <select id="categoria" required>
+            <option value="">Seleccionar...</option>
+            <option value="Alimentos">Alimentos</option>
+            <option value="Bebidas">Bebidas</option>
+            <option value="Limpieza">Limpieza</option>
+            <option value="Electrónicos">Electrónicos</option>
+            <option value="Ropa">Ropa</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="btnGuardar">Guardar</button>
+      </form>
+    </div>
+
+    <!-- Backup -->
+    <div id="backup" class="tab-content">
+      <button class="btn btn-primary" onclick="exportData()">📥 Exportar</button>
+      <button class="btn btn-danger" onclick="clearDatabase()">🧹 Limpiar BD</button>
+      <textarea id="backupData" rows="5" placeholder="Pegar respaldo aquí..."></textarea>
+      <button class="btn btn-primary" onclick="restoreData()">🔄 Restaurar</button>
+    </div>
+  </div>
+
+  <script>
+    let db, SQL;
+
+    async function initDatabase() {
+      SQL = await initSqlJs({ locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/${file}` });
+      const saved = localStorage.getItem('inventory_db');
+      db = saved ? new SQL.Database(new Uint8Array(JSON.parse(saved))) : new SQL.Database();
+      if (!saved) createTables();
+      loadData();
+    }
+    function createTables() {
+      db.run(`CREATE TABLE productos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT, descripcion TEXT, precio REAL, stock INTEGER, categoria TEXT
+      )`);
+      saveDatabase();
+    }
+    function saveDatabase() {
+      const data = db.export();
+      localStorage.setItem('inventory_db', JSON.stringify(Array.from(data)));
+    }
+
+    function agregarProducto(e) {
+      e.preventDefault();
+      const id = productoId.value;
+      const nombre = nombreEl.value.trim().toUpperCase();
+      if (!nombre) return showAlert("Nombre requerido", "error");
+      if (precioEl.value < 0 || stockEl.value < 0) return showAlert("Valores no válidos", "error");
+      if (id) {
+        db.run("UPDATE productos SET nombre=?, descripcion=?, precio=?, stock=?, categoria=? WHERE id=?",
+          [nombre, descripcionEl.value, +precioEl.value, +stockEl.value, categoriaEl.value, id]);
+        showAlert("Producto actualizado", "success");
+      } else {
+        db.run("INSERT INTO productos (nombre, descripcion, precio, stock, categoria) VALUES (?, ?, ?, ?, ?)",
+          [nombre, descripcionEl.value, +precioEl.value, +stockEl.value, categoriaEl.value]);
+        showAlert("Producto agregado", "success");
+      }
+      saveDatabase(); loadData(); e.target.reset(); productoId.value="";
+      openTab(null, 'productos');
+    }
+    function editarProducto(id) {
+      const res = db.exec("SELECT * FROM productos WHERE id=?", [id])[0];
+      if (!res) return;
+      const p = Object.fromEntries(res.columns.map((c,i)=>[c,res.values[0][i]]));
+      productoId.value = p.id; nombreEl.value=p.nombre; descripcionEl.value=p.descripcion;
+      precioEl.value=p.precio; stockEl.value=p.stock; categoriaEl.value=p.categoria;
+      openTab(null,'agregar');
+    }
+    function eliminarProducto(id) {
+      if (!confirm("¿Eliminar producto?")) return;
+      db.run("DELETE FROM productos WHERE id=?", [id]);
+      saveDatabase(); loadData(); showAlert("Producto eliminado", "success");
+    }
+
+    function loadData() {
+      const buscar = buscarNombre.value.toLowerCase();
+      const cat = filtroCategoria.value;
+      const res = db.exec("SELECT * FROM productos ORDER BY id DESC")[0] || { values: [], columns: [] };
+      const tbody = document.getElementById('productosTable'); tbody.innerHTML = '';
+      res.values.forEach(row => {
+        const p = Object.fromEntries(res.columns.map((c,i)=>[c,row[i]]));
+        if (buscar && !p.nombre.toLowerCase().includes(buscar)) return;
+        if (cat && p.categoria !== cat) return;
+        const tr = document.createElement('tr');
+        if (p.stock < 10) tr.classList.add('stock-bajo');
+        tr.innerHTML = `<td>${p.id}</td><td>${p.nombre}</td><td>$${p.precio.toFixed(2)}</td>
+          <td>${p.stock}</td><td>${p.categoria}</td>
+          <td>
+            <button class="btn btn-warning" onclick="editarProducto(${p.id})">✏️</button>
+            <button class="btn btn-danger" onclick="eliminarProducto(${p.id})">🗑️</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+      updateStats();
+    }
+    function updateStats() {
+      const total = db.exec("SELECT COUNT(*) FROM productos")[0].values[0][0];
+      const valor = db.exec("SELECT SUM(precio*stock) FROM productos")[0].values[0][0] || 0;
+      const bajos = db.exec("SELECT COUNT(*) FROM productos WHERE stock<10")[0].values[0][0];
+      totalProductos.textContent = total; valorTotal.textContent = "$" + valor.toFixed(2); stockBajo.textContent = bajos;
+    }
+    function openTab(e, id) {
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      if (e) e.currentTarget.classList.add('active');
+    }
+    function showAlert(msg, type) {
+      const box = alertBox; box.textContent = msg;
+      box.className = "alert alert-" + type; box.style.display = 'block';
+      setTimeout(()=>box.style.display='none', 2500);
+    }
+
+    function exportData() {
+      const blob = new Blob([localStorage.getItem('inventory_db')], {type:"application/json"});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download="inventario.json"; a.click(); URL.revokeObjectURL(a.href);
+    }
+    function restoreData() {
+      if (!confirm("Esto reemplazará todos los datos. ¿Continuar?")) return;
+      try {
+        db = new SQL.Database(new Uint8Array(JSON.parse(backupData.value)));
+        saveDatabase(); loadData(); showAlert("Datos restaurados", "success");
+      } catch { showAlert("Error en respaldo", "error"); }
+    }
+    function clearDatabase() {
+      if (!confirm("¿Borrar todos los productos?")) return;
+      db.run("DELETE FROM productos"); saveDatabase(); loadData(); showAlert("Base de datos vacía", "success");
+    }
+
+    const productoId=document.getElementById('productoId'), nombreEl=document.getElementById('nombre'),
+          descripcionEl=document.getElementById('descripcion'), precioEl=document.getElementById('precio'),
+          stockEl=document.getElementById('stock'), categoriaEl=document.getElementById('categoria');
+    document.getElementById('productoForm').addEventListener('submit', agregarProducto);
+    document.getElementById('buscarNombre').addEventListener('input', loadData);
+    document.getElementById('filtroCategoria').addEventListener('change', loadData);
+    document.addEventListener('DOMContentLoaded', initDatabase);
+  </script>
+</body>
+</html>
